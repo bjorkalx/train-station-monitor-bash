@@ -79,7 +79,6 @@ read -r -d '' POSITION_XML << EOM
 </REQUEST>
 EOM
 
-
 POSITION_RESPONSE=$(curl -s -X POST "$API_URL" -H 'Content-Type: application/xml' -H 'Accept: application/json' -d "$POSITION_XML")
 
 CLEAN_POSITION_RESPONSE=$(echo "$POSITION_RESPONSE" | sed -E 's/([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})\.[0-9]{3}[+-][0-9]{2}:[0-9]{2}"/\1Z"/g')
@@ -105,7 +104,6 @@ read -r -d '' JQ_POS_FILTER << 'JQEOF'
                 }
             ) |
             sort_by(.TimeAtLocation_ms) | reverse | .[0] as $latest |
-
             if $latest then
                 {
                     pos: $latest.LocationSignature,
@@ -128,8 +126,8 @@ POSITIONS_JSON=$(echo "$CLEAN_POSITION_RESPONSE" | jq -r "$JQ_POS_FILTER")
 format_line() {
   local json=$1
   local type=$2
-  local pos_code=$3 # New
-  local delay_min=$4 # New
+  local pos_code=$3
+  local delay_min=$4
 
   local op=$(echo "$json" | jq -r '.Operator // "?"')
   local tagnr=$(echo "$json" | jq -r '.AdvertisedTrainIdent // "?"')
@@ -155,7 +153,7 @@ format_line() {
     elif [ "$delay_min" -lt 0 ]; then
       pos="$pos_code +$((delay_min * -1))"
     else
-      pos="$pos_code" # I tid
+      pos="$pos_code 0"
     fi
   else
     pos=$(echo "$json" | jq -r 'if .Deviation == null then "" else [.Deviation[].Code | select(. != null)] | join(" ") end' | xargs)
@@ -177,10 +175,12 @@ echo "-------------------------------------"
   printf "Op|Tåg|Från|Tid|Ber.|Spår|Pos\n"
   echo "$API_RESPONSE" | jq -r -c '.RESPONSE.RESULT[0].TrainAnnouncement[] | select(.ActivityType == "Ankomst")' |
   while read -r line; do
+
     tagnr=$(echo "$line" | jq -r '.AdvertisedTrainIdent')
     pos_data=$(echo "$POSITIONS_JSON" | jq -r ".\"$tagnr\"")
     pos_code=$(echo "$pos_data" | jq -r ".pos")
     delay_min=$(echo "$pos_data" | jq -r ".delay")
+
     format_line "$line" "Ankomst" "$pos_code" "$delay_min"
   done
 ) | column -t -s '|'
@@ -191,11 +191,13 @@ echo "-------------------------------------"
 (
   printf "Op|Tåg|Till|Tid|Ber.|Spår|Pos\n"
   echo "$API_RESPONSE" | jq -r -c '.RESPONSE.RESULT[0].TrainAnnouncement[] | select(.ActivityType == "Avgang")' |
+
   while read -r line; do
     tagnr=$(echo "$line" | jq -r '.AdvertisedTrainIdent')
     pos_data=$(echo "$POSITIONS_JSON" | jq -r ".\"$tagnr\"")
     pos_code=$(echo "$pos_data" | jq -r ".pos")
     delay_min=$(echo "$pos_data" | jq -r ".delay")
+
     format_line "$line" "Avgang" "$pos_code" "$delay_min"
   done
 ) | column -t -s '|'
